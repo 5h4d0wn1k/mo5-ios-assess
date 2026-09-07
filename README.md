@@ -1,117 +1,92 @@
 # MO5 — iOS Security Assessment
 
-Info.plist security assessment for iOS app transport security, data protection, and compliance.
+Evaluates an iOS app's `Info.plist` for security misconfigurations — ATS
+exceptions, data protection, keychain access groups, deprecated components,
+encryption-compliance flags, and privacy descriptions. Runs offline against
+fixtures. Standard-library only.
 
-## Overview
+## What the engine genuinely does
 
-This project implements an iOS app security assessor that:
-- Parses Info.plist XML and extracts all configuration values
-- Checks App Transport Security (ATS) exceptions and TLS enforcement
-- Detects missing data protection flags (NSFileProtectionNone, UIFileSharingEnabled)
-- Flags keychain access-group over-privilege including wildcard groups
-- Identifies deprecated UIWebView usage
-- Checks encryption compliance flags (ITSAppUsesNonExemptEncryption)
-- Detects jailbreak-detection presence hints
-- Reviews privacy usage description completeness
+- **Hand-rolled XML plist parser** — no `plistlib`; decodes `<dict>/<array>/
+  <string>/<integer>/<true/<false>` key trees from raw XML.
+- **ATS analysis** — `NSAllowsArbitraryLoads`, `NSAllowsArbitraryLoadsInWebContent`,
+  per-domain `NSExceptionMinimumTLSVersion` and `NSExceptionRequiresForwardSecrecy`.
+- **Data protection** — `UIFileSharingEnabled`, `LSSupportsOpeningDocumentsInPlace`.
+- **Keychain scope** — wildcard `*` access group (CRITICAL), shared
+  app-group / iCloud identifiers (MEDIUM).
+- **Deprecated components** — `UIWebView` detection.
+- **Encryption (EAR) compliance** — `ITSAppUsesNonExemptEncryption` states.
+- **Vulnerability detection** — hashing/hardcoded-secret, jailbreak-detection
+  hints, privacy-description inventory.
+- **Findings** — severity-tagged JSON summary.
 
-## Features
-
-- **ATS Analysis**: NSAllowsArbitraryLoads, exception domains, TLS version, forward secrecy
-- **Data Protection**: UIFileSharingEnabled, LSSupportsOpeningDocumentsInPlace
-- **Keychain Audit**: Access group enumeration, wildcard detection, shared groups
-- **Deprecated Components**: UIWebView detection with migration guidance
-- **Encryption Compliance**: EAR/EE exemption flag verification
-- **Jailbreak Detection**: Plist-level indicator scanning
-- **Privacy Descriptions**: Coverage check for required usage descriptions
-
-## Dependencies
-
-**None** — uses only Python standard library (`xml.etree.ElementTree`, `re`, `argparse`, `collections`).
-
-## Installation
+## Quick start
 
 ```bash
-# No external dependencies required
-python3 ios_assess.py
+# Offline demo (assesses vulnerable+hardened fixture plists, writes reports/, exit 0)
+python3 firmware/ios_assess.py
+
+# Assess a real Info.plist
+python3 firmware/ios_assess.py --plist Info.plist --json
+
+# Rebuild fixtures
+python3 firmware/ios_assess.py --make-fixture
+
+# Tests
+python3 -m unittest discover -s tests
 ```
 
-## Usage
-
-```bash
-# Run demo with embedded sample plist
-python3 ios_assess.py
-
-# Assess a specific Info.plist
-python3 ios_assess.py --plist Info.plist
-```
-
-## Example Output
+## CLI
 
 ```
-============================================================
-  MO5 — iOS Security Assessment
-============================================================
-  Info.plist Security Analysis
-
-============================================================
-  APP TRANSPORT SECURITY (ATS)
-============================================================
-  [!!] CRITICAL: NSAllowsArbitraryLoads=true — ATS fully disabled
-  [!!] HIGH: example.com allows TLSv1.0 (should be TLSv1.2+)
-  [!!] MEDIUM: example.com — forward secrecy not required
-
-============================================================
-  KEYCHAIN ACCESS GROUPS
-============================================================
-  [!!] CRITICAL: Wildcard keychain access group (*) — shares keychain with all apps
-
-============================================================
-  DEPRECATED COMPONENTS
-============================================================
-  [!!] HIGH: UIWebView present — deprecated, use WKWebView
-
-  iOS SECURITY ASSESSMENT SUMMARY
-  CRITICAL  : 2
-  HIGH      : 2
-  MEDIUM    : 2
+python3 firmware/ios_assess.py [-h] [-p PLIST] [--json] [--report-dir REPORT_DIR]
+                               [--make-fixture]
 ```
+
+- `--plist/-p` — path to an `Info.plist`; omitted → offline demo.
+- `--json` — write JSON summary to `reports/`.
+- `--report-dir` — report directory (default `reports`).
+- `--make-fixture` — regenerate fixtures and exit.
+
+Exit codes: `0` success (incl. demo), `2` input error.
+
+## Live Lab Test Plan
+
+Prerequisites: an IPA (or just an Info.plist) you own or are authorized to
+audit — the fixture `com.example.vulnerableapp` stands in offline.
+
+1. **Baseline**: `python3 firmware/ios_assess.py` — confirm vulnerable fixture
+   yields ATS+keychain+deprecated findings while `hardened_Info.plist` yields
+   < 5 low-severity findings.
+2. **Real target**: pull the `Info.plist` from a permitted IPA
+   (`unzip -p app.ipa Payload/App.app/Info.plist`) and run the assessor; verify
+   every ATS exception against `plutil -p`.
+3. **Differential**: remove `NSAllowsArbitraryLoads` and the wildcard keychain
+   group from the vulnerable fixture and confirm the corresponding hints
+   disappear (regression guard).
+4. **JSON output**: confirm `reports/mo5_report.json` has `severity_counts` and
+   the full findings array.
+5. **Regression**: re-run `python3 -m unittest discover -s tests`.
+
+## Metrics
+
+| Metric                     | Value |
+|----------------------------|-------|
+| Standard-library only      | Yes   |
+| Third-party deps           | none  |
+| Deterministic offline tests| 18    |
+| Fixtures                   | vulnerable + hardened Info.plist |
+| Offline demo exit          | 0     |
+| Report output              | `reports/*.json` (gitignored) |
+| Inputs                     | Info.plist (XML) |
 
 ## IMPORTANT: Read before use.
 
-This project is provided for **educational and authorized security testing purposes only**.
-
-### Authorization Requirements
-- You MUST have explicit written permission from the app owner before using this tool
-- Unauthorized reverse engineering of iOS apps may violate applicable laws
-- This tool should ONLY be used on apps you own or have written authorization to test
-
-### Legal Framework
-- **Computer Fraud and Abuse Act (CFAA)**: Unauthorized access to computer systems is a federal crime
-- **DMCA (17 U.S.C. § 1201)**: Circumventing software protection measures may violate copyright law
-- **Apple Developer Agreement**: Reverse engineering restrictions apply to App Store apps
-- **State Laws**: Many states have additional computer crime and reverse engineering statutes
-
-### Acceptable Use
-- Security assessment of your own iOS applications
-- Authorized penetration testing with written scope
-- Academic research in controlled lab environments
-- Security education and training
-
-### Prohibited Use
-- Scanning or reverse engineering apps you do not own
-- Distributing exploits or vulnerability details publicly
-- Any activity that violates applicable laws or regulations
-- Commercial use without proper licensing
-
-### No Warranty
-This software is provided "AS IS" without warranty of any kind. The author is not responsible for any misuse or damage caused by this software.
-
-### Responsible Disclosure
-If you discover vulnerabilities using this tool, follow responsible disclosure practices:
-1. Report to the app developer privately
-2. Allow reasonable time for remediation
-3. Do not exploit beyond proof of concept
+Educational, authorization-required tooling. See `LICENSE` for the full shield —
+Authorization, CFAA / computer-crime statutes, Acceptable Use, Prohibited Use,
+No Warranty, and Responsible Disclosure. Only assess apps you own or are
+explicitly authorized to audit.
 
 ## License
 
-MIT
+MIT — full legal shield in `LICENSE`.

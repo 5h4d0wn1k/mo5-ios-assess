@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleDevelopmentRegion</key>
+    <string>en</string>
+    <key>CFBundleDisplayName</key>
+    <string>VulnerableApp</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.example.vulnerableapp</string>
+    <key>CFBundleVersion</key>
+    <string>1.0</string>
+    <key>CFBundleShortVersionString</key>
+    <string>1.0.0</string>
+
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSAllowsArbitraryLoads</key>
+        <true/>
+        <key>NSExceptionDomains</key>
+        <dict>
+            <key>example.com</key>
+            <dict>
+                <key>NSExceptionRequiresForwardSecrecy</key>
+                <false/>
+                <key>NSExceptionMinimumTLSVersion</key>
+                <string>TLSv1.0</string>
+            </dict>
+        </dict>
+    </dict>
+
+    <key>UIFileSharingEnabled</key>
+    <true/>
+    <key>LSSupportsOpeningDocumentsInPlace</key>
+    <true/>
+
+    <key>UIWebView</key>
+    <string>YES</string>
+
+    <key>keychain-access-groups</key>
+    <array>
+        <string>$(AppIdentifierPrefix)com.example.vulnerableapp</string>
+        <string>$(AppIdentifierPrefix)com.apple.security.application-groups</string>
+        <string>com.apple.developer.icloud-container-identifiers</string>
+        <string>*</string>
+    </array>
+
+    <key>UIRequiredDeviceCapabilities</key>
+    <array>
+        <string>armv7</string>
+    </array>
+
+    <key>ITSAppUsesNonExemptEncryption</key>
+    <false/>
+
+    <key>NSFaceIDUsageDescription</key>
+    <string>Use Face ID for login</string>
+
+    <key>NSCameraUsageDescription</key>
+    <string>Scan documents</string>
+
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Record audio</string>
+
+    <key>NSLocationWhenInUseUsageDescription</key>
+    <string>Find nearby stores</string>
+
+    <key>NSLocationAlwaysUsageDescription</key>
+    <string>Track your location</string>
+
+    <key>NSContactsUsageDescription</key>
+    <string>Import contacts</string>
+
+    <key>NSPhotoLibraryUsageDescription</key>
+    <string>Select photos</string>
+
+    <key>NSHealthShareUsageDescription</key>
+    <string>Read health data</string>
+
+    <key>NSHealthUpdateUsageDescription</key>
+    <string>Write health data</string>
+
+    <key>NSBluetoothAlwaysUsageDescription</key>
+    <string>Connect to devices</string>
+
+    <key>UISupportsDocumentBrowser</key>
+    <true/>
+
+    <key>NSNetworkActivityIndicatorVisible</key>
+    <true/>
+
+    <key>UILaunchStoryboardName</key>
+    <string>LaunchScreen</string>
+</dict>
+</plist>

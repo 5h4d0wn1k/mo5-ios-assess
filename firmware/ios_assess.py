@@ -19,6 +19,8 @@ WARNING: Educational use only. Only assess apps you own or are authorized to aud
 """
 
 import argparse
+import json
+import os
 import re
 import sys
 import xml.etree.ElementTree as ET
@@ -165,21 +167,18 @@ class IOSAppAssessor:
 
     def _parse_plist_xml(self, text):
         result = {}
-        try:
-            root = ET.fromstring(text)
-            dict_elem = root if root.tag == "dict" else root.find("dict")
-            if dict_elem is None:
-                return result
-            children = list(dict_elem)
-            i = 0
-            while i < len(children) - 1:
-                if children[i].tag == "key":
-                    key = children[i].text or ""
-                    value_elem = children[i + 1]
-                    result[key] = self._extract_value(value_elem)
-                i += 2
-        except ET.ParseError:
-            pass
+        root = ET.fromstring(text)
+        dict_elem = root if root.tag == "dict" else root.find("dict")
+        if dict_elem is None:
+            return result
+        children = list(dict_elem)
+        i = 0
+        while i < len(children) - 1:
+            if children[i].tag == "key":
+                key = children[i].text or ""
+                value_elem = children[i + 1]
+                result[key] = self._extract_value(value_elem)
+            i += 2
         return result
 
     def _extract_value(self, elem):
@@ -391,6 +390,16 @@ class IOSAppAssessor:
 
         print("\n" + "=" * 60)
 
+    def summary(self):
+        sev_counts = {}
+        for f in self.findings:
+            sev_counts[f["severity"]] = sev_counts.get(f["severity"], 0) + 1
+        return {
+            "bundle_id": self.plist_data.get("CFBundleIdentifier", "unknown"),
+            "findings": self.findings,
+            "severity_counts": sev_counts,
+        }
+
     def run(self):
         print("\n" + "=" * 60)
         print("  MO5 — iOS Security Assessment")
@@ -412,27 +421,121 @@ class IOSAppAssessor:
         return self.findings
 
 
+FIXTURE_HARDENED_PLIST = """<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleDevelopmentRegion</key>
+    <string>en</string>
+    <key>CFBundleDisplayName</key>
+    <string>LabBank</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.lab.hardenedbank</string>
+    <key>CFBundleShortVersionString</key>
+    <string>1.2.0</string>
+
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSAllowsArbitraryLoads</key>
+        <false/>
+        <key>NSExceptionDomains</key>
+        <dict>
+            <key>api.lab.example.com</key>
+            <dict>
+                <key>NSExceptionRequiresForwardSecrecy</key>
+                <true/>
+                <key>NSExceptionMinimumTLSVersion</key>
+                <string>TLSv1.3</string>
+            </dict>
+        </dict>
+    </dict>
+
+    <key>UIFileSharingEnabled</key>
+    <false/>
+
+    <key>keychain-access-groups</key>
+    <array>
+        <string>$(AppIdentifierPrefix)com.lab.hardenedbank</string>
+    </array>
+
+    <key>ITSAppUsesNonExemptEncryption</key>
+    <true/>
+
+    <key>NSFaceIDUsageDescription</key>
+    <string>Biometric sign-in</string>
+    <key>NSCameraUsageDescription</key>
+    <string>Scan a payment card</string>
+</dict>
+</plist>
+"""
+
+
+def create_fixtures(fixtures_dir):
+    """Write deterministic plist fixtures (vulnerable + hardened)."""
+    os.makedirs(fixtures_dir, exist_ok=True)
+    specs = {
+        "vulnerable_Info.plist": SAMPLE_PLIST,
+        "hardened_Info.plist": FIXTURE_HARDENED_PLIST,
+    }
+    for name, content in specs.items():
+        with open(os.path.join(fixtures_dir, name), "w") as f:
+            f.write(content)
+    return specs
+
+
+def run_demo(report_dir="reports"):
+    """Offline demo: assess vulnerable + hardened plist fixtures. Exit 0."""
+    os.makedirs(report_dir, exist_ok=True)
+    fixtures_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "fixtures")
+    create_fixtures(fixtures_dir)
+    out = {}
+    for name in ("vulnerable_Info.plist", "hardened_Info.plist"):
+        with open(os.path.join(fixtures_dir, name)) as f:
+            assessor = IOSAppAssessor(f.read())
+            assessor.run()
+            out[name] = assessor.summary()
+    report = os.path.join(report_dir, "mo5_demo_report.json")
+    with open(report, "w") as f:
+        json.dump(out, f, indent=2)
+    print(f"[*] JSON report written: {report}")
+    return 0
+
+
 def main():
-    parser = argparse.ArgumentParser(description="MO5 — iOS Security Assessment")
-    parser.add_argument("--plist", "-p", help="Path to Info.plist (uses demo if omitted)")
+    parser = argparse.ArgumentParser(
+        description="MO5 — iOS Security Assessment (Info.plist security analysis)")
+    parser.add_argument("--plist", "-p", help="Path to Info.plist (offline demo if omitted)")
+    parser.add_argument("--json", action="store_true", help="write JSON report to reports/")
+    parser.add_argument("--report-dir", default="reports", help="report dir (default: reports)")
+    parser.add_argument("--make-fixture", action="store_true", help="regenerate fixtures and exit")
     args = parser.parse_args()
 
-    plist_text = None
-    if args.plist:
-        try:
-            with open(args.plist) as f:
-                plist_text = f.read()
-            print(f"Loaded plist from: {args.plist}")
-        except Exception as e:
-            print(f"ERROR: Could not read plist: {e}")
-            sys.exit(1)
-    else:
-        print("No plist provided — using embedded demo data")
+    if args.make_fixture:
+        fixtures_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "fixtures")
+        create_fixtures(fixtures_dir)
+        print(f"[*] Fixtures written to {os.path.abspath(fixtures_dir)}")
+        return 0
+
+    if not args.plist:
+        return run_demo(args.report_dir)
+
+    try:
+        with open(args.plist) as f:
+            plist_text = f.read()
+    except OSError as e:
+        print(f"[!] ERROR: Could not read plist: {e}")
+        return 2
+    print(f"Loaded plist from: {args.plist}")
 
     assessor = IOSAppAssessor(plist_text)
-    findings = assessor.run()
+    assessor.run()
 
-    print("\nDone.")
+    if args.json:
+        os.makedirs(args.report_dir, exist_ok=True)
+        out = os.path.join(args.report_dir, "mo5_report.json")
+        with open(out, "w") as f:
+            json.dump(assessor.summary(), f, indent=2)
+        print(f"[*] JSON report written: {out}")
     return 0
 
 
