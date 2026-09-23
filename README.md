@@ -3,41 +3,62 @@
 > or hold explicit written authorization to assess**. Unauthorized use is
 > prohibited and may be illegal. Read [ETHICS.md](ETHICS.md) and
 > [SCOPE.md](SCOPE.md) before use. Use at your own risk; **AS IS**, no warranty.
+
 # MO5 — iOS Security Assessment
 
-Evaluates an iOS app's `Info.plist` for security misconfigurations — ATS
-exceptions, data protection, keychain access groups, deprecated components,
-encryption-compliance flags, and privacy descriptions. Runs offline against
+**iOS app security assessment toolkit** by **5h4d0wn1k** for **mobile
+penetration testing** of an app's `Info.plist`: App Transport Security (ATS)
+exceptions, keychain access groups, data-protection flags, deprecated
+`UIWebView` usage, export-compliance (`ITSAppUsesNonExemptEncryption`) states
+and jailbreak-detection hints — with severity-tagged JSON findings and offline
 fixtures. Standard-library only.
 
-## What the engine genuinely does
+## Why assess Info.plist
 
-- **Hand-rolled XML plist parser** — no `plistlib`; decodes `<dict>/<array>/
-  <string>/<integer>/<true/<false>` key trees from raw XML.
-- **ATS analysis** — `NSAllowsArbitraryLoads`, `NSAllowsArbitraryLoadsInWebContent`,
-  per-domain `NSExceptionMinimumTLSVersion` and `NSExceptionRequiresForwardSecrecy`.
-- **Data protection** — `UIFileSharingEnabled`, `LSSupportsOpeningDocumentsInPlace`.
-- **Keychain scope** — wildcard `*` access group (CRITICAL), shared
-  app-group / iCloud identifiers (MEDIUM).
+An iOS app's `Info.plist` reveals high-impact security posture before a single
+binary is touched: disabled ATS, wildcard keychain groups, deprecated
+`UIWebView` and missing export-compliance declarations routinely ship in real
+apps. This tool automates the plist triage step of a mobile assessment so
+reviewers can flag CRITICAL keychain over-privileges and weak TLS policy in
+seconds, then verify the rest of the binary. It works offline against bundled
+vulnerable and hardened fixtures, making it an ideal lab exercise for
+[assessment education](ETHICS.md). Only run it against apps you own or hold
+written authorization to audit — see [SCOPE.md](SCOPE.md).
+
+## Features
+
+- **Plists without plistlib** — walks XML `<dict>/<array>/<string>/<integer>`
+  key trees via `ElementTree` (`parse_plist` in `firmware/ios_assess.py`).
+- **ATS analysis** — flags `NSAllowsArbitraryLoads`,
+  `NSAllowsArbitraryLoadsInWebContent`, per-domain
+  `NSExceptionMinimumTLSVersion` and `NSExceptionRequiresForwardSecrecy`.
+- **Data protection** — checks `UIFileSharingEnabled` and
+  `LSSupportsOpeningDocumentsInPlace`.
+- **Keychain scope** — CRITICAL for wildcard `*` access group; MEDIUM for
+  shared app-group / iCloud identifiers.
 - **Deprecated components** — `UIWebView` detection.
-- **Encryption (EAR) compliance** — `ITSAppUsesNonExemptEncryption` states.
-- **Vulnerability detection** — hashing/hardcoded-secret, jailbreak-detection
-  hints, privacy-description inventory.
-- **Findings** — severity-tagged JSON summary.
+- **Export compliance (EAR)** — validates `ITSAppUsesNonExemptEncryption`
+  states against App Store review expectations.
+- **Hardening hints** — jailbreak-detection indicator inventory
+  (`jailbreak`, `cydia`, `frida`, `substrate`, …).
+- **Findings report** — severity-tagged JSON summary with severity counts.
+- **Offline fixtures** — `vulnerable_Info.plist` and `hardened_Info.plist` for
+  deterministic demos and differential testing.
 
-## Quick start
+## Quickstart
 
 ```bash
-# Offline demo (assesses vulnerable+hardened fixture plists, writes reports/, exit 0)
+# Offline demo (assesses the vulnerable + hardened fixtures, writes reports/)
 python3 firmware/ios_assess.py
 
-# Assess a real Info.plist
-python3 firmware/ios_assess.py --plist Info.plist --json
+# Assess a real Info.plist from a permitted IPA
+unzip -p app.ipa Payload/App.app/Info.plist > Info.plist
+python3 firmware/ios_assess.py -p Info.plist --json
 
 # Rebuild fixtures
 python3 firmware/ios_assess.py --make-fixture
 
-# Tests
+# Run the test suite (18 deterministic offline tests)
 python3 -m unittest discover -s tests
 ```
 
@@ -48,50 +69,38 @@ python3 firmware/ios_assess.py [-h] [-p PLIST] [--json] [--report-dir REPORT_DIR
                                [--make-fixture]
 ```
 
-- `--plist/-p` — path to an `Info.plist`; omitted → offline demo.
-- `--json` — write JSON summary to `reports/`.
+- `-p, --plist` — path to an `Info.plist`; omitted → offline demo.
+- `--json` — write a JSON findings summary to `reports/`.
 - `--report-dir` — report directory (default `reports`).
 - `--make-fixture` — regenerate fixtures and exit.
 
-Exit codes: `0` success (incl. demo), `2` input error.
+Exit codes: `0` on success (including the demo), `2` on input error.
 
-## Live Lab Test Plan
+## Project structure
 
-Prerequisites: an IPA (or just an Info.plist) you own or are authorized to
-audit — the fixture `com.example.vulnerableapp` stands in offline.
+```
+firmware/ios_assess.py   # plist parser, check modules, findings, CLI
+fixtures/                # vulnerable_ and hardened_Info.plist demo targets
+tests/                   # unittest coverage: ATS, keychain, EAR, demo
+ETHICS.md                # educational-use policy (read first)
+SCOPE.md                 # scope and target authorization rules
+```
 
-1. **Baseline**: `python3 firmware/ios_assess.py` — confirm vulnerable fixture
-   yields ATS+keychain+deprecated findings while `hardened_Info.plist` yields
-   < 5 low-severity findings.
-2. **Real target**: pull the `Info.plist` from a permitted IPA
-   (`unzip -p app.ipa Payload/App.app/Info.plist`) and run the assessor; verify
-   every ATS exception against `plutil -p`.
-3. **Differential**: remove `NSAllowsArbitraryLoads` and the wildcard keychain
-   group from the vulnerable fixture and confirm the corresponding hints
-   disappear (regression guard).
-4. **JSON output**: confirm `reports/mo5_report.json` has `severity_counts` and
-   the full findings array.
-5. **Regression**: re-run `python3 -m unittest discover -s tests`.
+## Documentation
 
-## Metrics
+- [ETHICS.md](ETHICS.md) — acceptable and prohibited use.
+- [SCOPE.md](SCOPE.md) — authorized target scope.
+- [SECURITY.md](SECURITY.md) — responsible disclosure.
+- [CONTRIBUTING.md](CONTRIBUTING.md) — contribution guide.
 
-| Metric                     | Value |
-|----------------------------|-------|
-| Standard-library only      | Yes   |
-| Third-party deps           | none  |
-| Deterministic offline tests| 18    |
-| Fixtures                   | vulnerable + hardened Info.plist |
-| Offline demo exit          | 0     |
-| Report output              | `reports/*.json` (gitignored) |
-| Inputs                     | Info.plist (XML) |
+## Contributing
 
-## IMPORTANT: Read before use.
-
-Educational, authorization-required tooling. See `LICENSE` for the full shield —
-Authorization, CFAA / computer-crime statutes, Acceptable Use, Prohibited Use,
-No Warranty, and Responsible Disclosure. Only assess apps you own or are
-explicitly authorized to audit.
+New plist checks, fixture variants and differential test cases are welcome.
+Open an issue or PR against the default branch; keep contributions scoped to
+educational and authorized-use tooling.
 
 ## License
 
-MIT — full legal shield in `LICENSE`.
+MIT — full legal shield in [LICENSE](LICENSE). Educational, authorization-
+required software for assessing iOS apps you own or are explicitly permitted
+to audit.
